@@ -1,34 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, PanResponder } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-export default function App() {
-  const [paths, setPaths] = useState([]);
-  const [currentPath, setCurrentPath] = useState('');
+// Calcola la curva di Bézier quadratica morbida tra i punti tracciati
+const pointsToSvgPath = (points) => {
+  if (!points || points.length === 0) return '';
+  if (points.length === 1) {
+    return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)} L ${(points[0].x + 0.1).toFixed(1)} ${(points[0].y + 0.1).toFixed(1)}`;
+  }
 
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      setCurrentPath(`M ${locationX.toFixed(1)} ${locationY.toFixed(1)}`);
-    },
-    onPanResponderMove: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      setCurrentPath((prev) => `${prev} L ${locationX.toFixed(1)} ${locationY.toFixed(1)}`);
-    },
-    onPanResponderRelease: () => {
-      if (currentPath) {
-        setPaths((prev) => [...prev, currentPath]);
-        setCurrentPath('');
-      }
-    },
-  });
+  let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const xc = (points[i].x + points[i + 1].x) / 2;
+    const yc = (points[i].y + points[i + 1].y) / 2;
+    path += ` Q ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}, ${xc.toFixed(1)} ${yc.toFixed(1)}`;
+  }
+
+  const last = points[points.length - 1];
+  path += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+
+  return path;
+};
+
+export default function App() {
+  const [completedPaths, setCompletedPaths] = useState([]);
+  const [currentPoints, setCurrentPoints] = useState([]);
+  const pointsRef = useRef([]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        const { locationX, locationY } = evt.nativeEvent;
+        const startPoint = { x: locationX, y: locationY };
+        pointsRef.current = [startPoint];
+        setCurrentPoints([startPoint]);
+      },
+      onPanResponderMove: (evt) => {
+        const { locationX, locationY } = evt.nativeEvent;
+        const newPoint = { x: locationX, y: locationY };
+        const lastPoint = pointsRef.current[pointsRef.current.length - 1];
+
+        // Filtra micro-movimenti (rumore del touch) inferiori a 2px
+        if (lastPoint) {
+          const dx = newPoint.x - lastPoint.x;
+          const dy = newPoint.y - lastPoint.y;
+          if (Math.hypot(dx, dy) < 2) return;
+        }
+
+        pointsRef.current.push(newPoint);
+        setCurrentPoints([...pointsRef.current]);
+      },
+      onPanResponderRelease: () => {
+        if (pointsRef.current.length > 0) {
+          const svgPath = pointsToSvgPath(pointsRef.current);
+          setCompletedPaths((prev) => [...prev, svgPath]);
+          pointsRef.current = [];
+          setCurrentPoints([]);
+        }
+      },
+    })
+  ).current;
 
   const clearCanvas = () => {
-    setPaths([]);
-    setCurrentPath('');
+    setCompletedPaths([]);
+    setCurrentPoints([]);
+    pointsRef.current = [];
   };
+
+  const currentSvgPath = pointsToSvgPath(currentPoints);
 
   return (
     <View style={styles.container}>
@@ -41,11 +83,26 @@ export default function App() {
 
       <View style={styles.canvasContainer} {...panResponder.panHandlers}>
         <Svg style={styles.svg}>
-          {paths.map((path, index) => (
-            <Path key={index} d={path} stroke="#ffffff" strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {completedPaths.map((path, index) => (
+            <Path
+              key={index}
+              d={path}
+              stroke="#ffffff"
+              strokeWidth={4}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           ))}
-          {currentPath !== '' && (
-            <Path d={currentPath} stroke="#ffffff" strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {currentSvgPath !== '' && (
+            <Path
+              d={currentSvgPath}
+              stroke="#ffffff"
+              strokeWidth={4}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           )}
         </Svg>
       </View>

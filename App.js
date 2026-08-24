@@ -27,6 +27,7 @@ export default function App() {
   const [resultText, setResultText] = useState('');
 
   const pointsRef = useRef([]);
+  const completedPathsRef = useRef([]);
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -34,20 +35,28 @@ export default function App() {
     if (timerRef.current) clearTimeout(timerRef.current);
 
     timerRef.current = setTimeout(async () => {
-      if (completedPaths.length === 0 && pointsRef.current.length === 0) return;
+      // Verifica con il ref sempre aggiornato
+      if (completedPathsRef.current.length === 0) return;
 
       setIsAnalyzing(true);
+      setResultText('Acquisizione immagine in corso...');
+
       try {
+        if (!canvasRef.current) {
+          throw new Error('Canvas ref non pronto');
+        }
+
         const base64Image = await captureRef(canvasRef, {
           format: 'png',
           quality: 0.8,
           result: 'base64',
         });
 
-        console.log('Immagine catturata! Pronta per l\'API.');
-        setResultText('Riconoscimento in corso...');
+        console.log('Immagine catturata con successo! Lunghezza base64:', base64Image.length);
+        setResultText('Immagine catturata! Pronta per l\'API.');
       } catch (error) {
         console.error('Errore durante la cattura dell\'immagine:', error);
+        setResultText('Errore durante l\'acquisizione.');
       } finally {
         setIsAnalyzing(false);
       }
@@ -60,6 +69,7 @@ export default function App() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         if (timerRef.current) clearTimeout(timerRef.current);
+        setResultText('');
 
         const { locationX, locationY } = evt.nativeEvent;
         const startPoint = { x: locationX, y: locationY };
@@ -83,9 +93,15 @@ export default function App() {
       onPanResponderRelease: () => {
         if (pointsRef.current.length > 0) {
           const svgPath = pointsToSvgPath(pointsRef.current);
-          setCompletedPaths((prev) => [...prev, svgPath]);
+
+          // Aggiorna subito sia il Ref che lo Stato
+          completedPathsRef.current.push(svgPath);
+          setCompletedPaths([...completedPathsRef.current]);
+
           pointsRef.current = [];
           setCurrentPoints([]);
+
+          // Avvia il timer di 1.5s
           triggerAutoCalculate();
         }
       },
@@ -94,10 +110,12 @@ export default function App() {
 
   const clearCanvas = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    completedPathsRef.current = [];
     setCompletedPaths([]);
     setCurrentPoints([]);
     pointsRef.current = [];
     setResultText('');
+    setIsAnalyzing(false);
   };
 
   const currentSvgPath = pointsToSvgPath(currentPoints);
@@ -113,14 +131,17 @@ export default function App() {
 
       <View style={styles.resultBar}>
         {isAnalyzing ? (
-          <ActivityIndicator color="#00e676" size="small" />
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color="#00e676" size="small" style={{ marginRight: 8 }} />
+            <Text style={styles.resultText}>{resultText}</Text>
+          </View>
         ) : (
           <Text style={styles.resultText}>{resultText || 'Scrivi qualcosa...'}</Text>
         )}
       </View>
 
-      <ViewShot ref={canvasRef} style={styles.canvasContainer}>
-        <View style={styles.svgContainer} {...panResponder.panHandlers}>
+      <ViewShot ref={canvasRef} style={styles.canvasContainer} options={{ format: 'png', quality: 0.8 }}>
+        <View style={styles.svgContainer} collapsable={false} {...panResponder.panHandlers}>
           <Svg style={styles.svg}>
             {completedPaths.map((path, index) => (
               <Path
@@ -185,6 +206,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderBottomWidth: 1,
     borderBottomColor: '#333333',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   resultText: {
     color: '#00e676',

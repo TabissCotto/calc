@@ -30,7 +30,6 @@ export default function App() {
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Esegue l'elaborazione automatica dell'immagine dopo 1.5s di inattività
   const triggerAutoCalculate = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
 
@@ -39,7 +38,6 @@ export default function App() {
 
       setIsAnalyzing(true);
       try {
-        // Cattura l'immagine del canvas in formato Base64
         const base64Image = await captureRef(canvasRef, {
           format: 'png',
           quality: 0.8,
@@ -47,14 +45,13 @@ export default function App() {
         });
 
         console.log('Immagine catturata! Pronta per l\'API.');
-        // QUI collegheremo la chiamata API nell'ultimo step
         setResultText('Riconoscimento in corso...');
       } catch (error) {
         console.error('Errore durante la cattura dell\'immagine:', error);
       } finally {
         setIsAnalyzing(false);
       }
-    }, 1500); // 1.5 secondi di pausa prima di elaborare
+    }, 1500);
   };
 
   const panResponder = useRef(
@@ -62,7 +59,6 @@ export default function App() {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        // Se l'utente riprende a scrivere, cancella il timer precedente
         if (timerRef.current) clearTimeout(timerRef.current);
 
         const { locationX, locationY } = evt.nativeEvent;
@@ -90,7 +86,6 @@ export default function App() {
           setCompletedPaths((prev) => [...prev, svgPath]);
           pointsRef.current = [];
           setCurrentPoints([]);
-          // Avvia il conto alla rovescia di 1.5 secondi
           triggerAutoCalculate();
         }
       },
@@ -116,7 +111,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Area del Risultato/Status */}
       <View style={styles.resultBar}>
         {isAnalyzing ? (
           <ActivityIndicator color="#00e676" size="small" />
@@ -125,30 +119,32 @@ export default function App() {
         )}
       </View>
 
-      <ViewShot ref={canvasRef} style={styles.canvasContainer} {...panResponder.panHandlers}>
-        <Svg style={styles.svg}>
-          {completedPaths.map((path, index) => (
-            <Path
-              key={index}
-              d={path}
-              stroke="#ffffff"
-              strokeWidth={4}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
-          {currentSvgPath !== '' && (
-            <Path
-              d={currentSvgPath}
-              stroke="#ffffff"
-              strokeWidth={4}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-        </Svg>
+      <ViewShot ref={canvasRef} style={styles.canvasContainer}>
+        <View style={styles.svgContainer} {...panResponder.panHandlers}>
+          <Svg style={styles.svg}>
+            {completedPaths.map((path, index) => (
+              <Path
+                key={index}
+                d={path}
+                stroke="#ffffff"
+                strokeWidth={4}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+            {currentSvgPath !== '' && (
+              <Path
+                d={currentSvgPath}
+                stroke="#ffffff"
+                strokeWidth={4}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+          </Svg>
+        </View>
       </ViewShot>
     </View>
   );
@@ -198,6 +194,9 @@ const styles = StyleSheet.create({
   canvasContainer: {
     flex: 1,
     backgroundColor: '#1e1e1e',
+  },
+  svgContainer: {
+    flex: 1,
   },
   svg: {
     flex: 1,

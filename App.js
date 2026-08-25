@@ -50,6 +50,7 @@ const calculateBoundingBox = (points) => {
 };
 
 // Generatore HTML + KaTeX leggero e veloce in locale
+// Generatore HTML + KaTeX leggero e veloce in locale
 const getKaTeXHtml = (latexFormula, resultText) => `
   <!DOCTYPE html>
   <html>
@@ -74,9 +75,9 @@ const getKaTeXHtml = (latexFormula, resultText) => `
           font-size: 26px;
           white-space: nowrap;
         }
-        .result {
-          color: #00e676;
-          font-weight: bold;
+        /* Coloriamo solo l'ultima parte dopo l'uguale */
+        .katex {
+          color: #ffffff;
         }
       </style>
     </head>
@@ -84,10 +85,14 @@ const getKaTeXHtml = (latexFormula, resultText) => `
       <div id="formula"></div>
       <script>
         try {
-          const rawLatex = ${JSON.stringify(latexFormula + ' = ')};
-          const rawResult = ${JSON.stringify(resultText)};
-          const renderedLatex = katex.renderToString(rawLatex, { throwOnError: false });
-          document.getElementById('formula').innerHTML = renderedLatex + '<span class="result">' + rawResult + '</span>';
+          // Uniamo espressione e risultato dentro un'unica stringa LaTeX
+          // Usiamo \\textcolor per colorare di verde (#00e676) solo il risultato
+          const fullFormula = ${JSON.stringify(latexFormula)} + " = \\\\textcolor{#00e676}{" + ${JSON.stringify(resultText)} + "}";
+          
+          katex.render(fullFormula, document.getElementById('formula'), { 
+            throwOnError: false,
+            colorIsTextColor: true 
+          });
         } catch(e) {
           document.getElementById('formula').innerText = ${JSON.stringify(latexFormula + ' = ' + resultText)};
         }

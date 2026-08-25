@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, PanResponder, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import ViewShot, { captureRef } from 'react-native-view-shot';
+import { WebView } from 'react-native-webview';
 
 // INSERISCI LA TUA API KEY DI GEMINI QUI SOTTO:
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
@@ -23,7 +24,6 @@ const pointsToSvgPath = (points) => {
   return path;
 };
 
-// Funzione per calcolare le coordinate del rettangolo (Bounding Box) attorno ai punti tracciati
 const calculateBoundingBox = (points) => {
   if (!points || points.length === 0) return null;
 
@@ -49,6 +49,53 @@ const calculateBoundingBox = (points) => {
   };
 };
 
+// Generatore HTML + KaTeX leggero e veloce in locale
+const getKaTeXHtml = (latexFormula, resultText) => `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+      <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+      <style>
+        body, html {
+          margin: 0;
+          padding: 0;
+          background-color: transparent;
+          color: #ffffff;
+          font-family: sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          height: 100%;
+          overflow: hidden;
+        }
+        #formula {
+          font-size: 26px;
+          white-space: nowrap;
+        }
+        .result {
+          color: #00e676;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <div id="formula"></div>
+      <script>
+        try {
+          const rawLatex = ${JSON.stringify(latexFormula + ' = ')};
+          const rawResult = ${JSON.stringify(resultText)};
+          const renderedLatex = katex.renderToString(rawLatex, { throwOnError: false });
+          document.getElementById('formula').innerHTML = renderedLatex + '<span class="result">' + rawResult + '</span>';
+        } catch(e) {
+          document.getElementById('formula').innerText = ${JSON.stringify(latexFormula + ' = ' + resultText)};
+        }
+      </script>
+    </body>
+  </html>
+`;
+
 export default function App() {
   const [completedPaths, setCompletedPaths] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
@@ -63,7 +110,7 @@ export default function App() {
   const timerRef = useRef(null);
 
   const [boundingBox, setBoundingBox] = useState(null);
-  const sessionPointsRef = useRef([]); 
+  const sessionPointsRef = useRef([]);
 
   const analyzeImageWithAI = async (base64Image) => {
     try {
@@ -74,7 +121,7 @@ export default function App() {
           {
             parts: [
               { 
-                text: "Sei un risolutore matematico. Leggi l'espressione scritta a mano in questa immagine. Restituisci ESCLUSIVAMENTE un oggetto JSON valido con due chiavi: 'latex' (l'espressione riconosciuta scritta in sintassi LaTeX o testo semplice) e 'result' (il risultato finale del calcolo o l'espressione semplificata). Non includere formattazione markdown o altro testo." 
+                text: "Sei un risolutore matematico. Leggi l'espressione scritta a mano in questa immagine. Restituisci ESCLUSIVAMENTE un oggetto JSON valido con due chiavi: 'latex' (l'espressione riconosciuta scritta in sintassi LaTeX pulita) e 'result' (il risultato finale del calcolo o l'espressione semplificata). Non includere formattazione markdown o altro testo." 
               },
               {
                 inlineData: {
@@ -138,7 +185,7 @@ export default function App() {
       } finally {
         setIsAnalyzing(false);
       }
-    }, 1500); // 1.5 secondi di attesa
+    }, 1500);
   };
 
   const panResponder = useRef(
@@ -149,7 +196,6 @@ export default function App() {
         if (timerRef.current) clearTimeout(timerRef.current);
         setStatusText('');
         
-        // Se c'è già un risultato e si tocca lo schermo, puliamo per una nuova equazione
         if (mathResult) {
           clearCanvas();
         }
@@ -222,7 +268,6 @@ export default function App() {
       <ViewShot ref={canvasRef} style={styles.canvasContainer} options={{ format: 'png', quality: 0.8 }}>
         <View style={styles.svgContainer} collapsable={false} {...panResponder.panHandlers}>
           
-          {/* Mostriamo i tratti SVG solo se non c'è ancora un risultato */}
           {!mathResult && (
             <Svg style={styles.svg}>
               {completedPaths.map((path, index) => (
@@ -234,7 +279,6 @@ export default function App() {
             </Svg>
           )}
 
-          {/* Loader posizionato al centro del disegno durante l'attesa */}
           {isAnalyzing && boundingBox && !mathResult && (
             <ActivityIndicator 
               color="#00e676" 
@@ -246,20 +290,24 @@ export default function App() {
             />
           )}
 
-          {/* Il testo magico che sostituisce il disegno */}
           {mathResult && boundingBox && (
             <View
               style={[
-                styles.magicTextContainer,
+                styles.katexContainer,
                 {
                   left: boundingBox.x,
-                  top: boundingBox.centerY - 25, // Centrato verticalmente rispetto all'altezza originale
+                  top: boundingBox.centerY - 45,
+                  width: Math.max(boundingBox.width * 1.5, 300),
                 }
               ]}
+              pointerEvents="none"
             >
-              <Text style={styles.magicText}>
-                {mathResult.latex} = <Text style={styles.magicResult}>{mathResult.result}</Text>
-              </Text>
+              <WebView
+                originWhitelist={['*']}
+                source={{ html: getKaTeXHtml(mathResult.latex, mathResult.result) }}
+                style={{ backgroundColor: 'transparent' }}
+                scrollEnabled={false}
+              />
             </View>
           )}
 
@@ -319,19 +367,8 @@ const styles = StyleSheet.create({
   floatingLoader: {
     position: 'absolute',
   },
-  magicTextContainer: {
+  katexContainer: {
     position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  magicText: {
-    color: '#ffffff',
-    fontSize: 32,
-    fontWeight: '500',
-  },
-  magicResult: {
-    color: '#00e676',
-    fontWeight: 'bold',
+    height: 90,
   },
 });

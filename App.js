@@ -23,12 +23,37 @@ const pointsToSvgPath = (points) => {
   return path;
 };
 
+// Funzione per calcolare le coordinate del rettangolo (Bounding Box) attorno ai punti tracciati
+const calculateBoundingBox = (points) => {
+  if (!points || points.length === 0) return null;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  points.forEach((point) => {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  });
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+    centerX: minX + (maxX - minX) / 2,
+    centerY: minY + (maxY - minY) / 2,
+  };
+};
+
 export default function App() {
   const [completedPaths, setCompletedPaths] = useState([]);
   const [currentPoints, setCurrentPoints] = useState([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
-  // Nuovo stato per gestire l'output matematico
   const [mathResult, setMathResult] = useState(null);
   const [statusText, setStatusText] = useState('');
 
@@ -36,6 +61,9 @@ export default function App() {
   const completedPathsRef = useRef([]);
   const canvasRef = useRef(null);
   const timerRef = useRef(null);
+
+  const [boundingBox, setBoundingBox] = useState(null);
+  const sessionPointsRef = useRef([]); 
 
   const analyzeImageWithAI = async (base64Image) => {
     try {
@@ -46,7 +74,7 @@ export default function App() {
           {
             parts: [
               { 
-                text: "Sei un risolutore matematico. Leggi l'espressione scritta a mano in questa immagine. Restituisci ESCLUSIVAMENTE un oggetto JSON valido con due chiavi: 'latex' (l'espressione riconosciuta scritta in sintassi LaTeX) e 'result' (il risultato finale del calcolo o l'espressione semplificata). Non includere formattazione markdown o altro testo." 
+                text: "Sei un risolutore matematico. Leggi l'espressione scritta a mano in questa immagine. Restituisci ESCLUSIVAMENTE un oggetto JSON valido con due chiavi: 'latex' (l'espressione riconosciuta scritta in sintassi LaTeX o testo semplice) e 'result' (il risultato finale del calcolo o l'espressione semplificata). Non includere formattazione markdown o altro testo." 
               },
               {
                 inlineData: {
@@ -71,10 +99,7 @@ export default function App() {
         throw new Error(data.error.message);
       }
 
-      // Estraiamo il testo della risposta
       let rawText = data.candidates[0].content.parts[0].text;
-      
-      // Puliamo eventuale markdown residuo (es. i blocchi ```json ... ```)
       rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
       
       const parsedJSON = JSON.parse(rawText);
@@ -83,7 +108,7 @@ export default function App() {
 
     } catch (error) {
       console.error('Errore API:', error);
-      setStatusText('Errore di riconoscimento o calcolo.');
+      setStatusText('Errore di riconoscimento.');
     }
   };
 
@@ -94,7 +119,7 @@ export default function App() {
       if (completedPathsRef.current.length === 0) return;
 
       setIsAnalyzing(true);
-      setStatusText('Acquisizione immagine...');
+      setStatusText('Acquisizione in corso...');
       setMathResult(null);
 
       try {
@@ -104,7 +129,7 @@ export default function App() {
           result: 'base64',
         });
 
-        setStatusText('IA al lavoro...');
+        setStatusText('Calcolo in corso...');
         await analyzeImageWithAI(base64Image);
         
       } catch (error) {
@@ -113,7 +138,7 @@ export default function App() {
       } finally {
         setIsAnalyzing(false);
       }
-    }, 1500);
+    }, 1500); // 1.5 secondi di attesa
   };
 
   const panResponder = useRef(
@@ -123,6 +148,11 @@ export default function App() {
       onPanResponderGrant: (evt) => {
         if (timerRef.current) clearTimeout(timerRef.current);
         setStatusText('');
+        
+        // Se c'è già un risultato e si tocca lo schermo, puliamo per una nuova equazione
+        if (mathResult) {
+          clearCanvas();
+        }
         
         const { locationX, locationY } = evt.nativeEvent;
         const startPoint = { x: locationX, y: locationY };
@@ -150,6 +180,11 @@ export default function App() {
           completedPathsRef.current.push(svgPath);
           setCompletedPaths([...completedPathsRef.current]);
 
+          sessionPointsRef.current = [...sessionPointsRef.current, ...pointsRef.current];
+          
+          const currentBox = calculateBoundingBox(sessionPointsRef.current);
+          setBoundingBox(currentBox);
+
           pointsRef.current = [];
           setCurrentPoints([]);
 
@@ -165,6 +200,8 @@ export default function App() {
     setCompletedPaths([]);
     setCurrentPoints([]);
     pointsRef.current = [];
+    sessionPointsRef.current = [];
+    setBoundingBox(null);
     setStatusText('');
     setMathResult(null);
     setIsAnalyzing(false);
@@ -176,52 +213,56 @@ export default function App() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Calc Canvas</Text>
+        <Text style={styles.statusText}>{statusText}</Text>
         <TouchableOpacity style={styles.clearButton} onPress={clearCanvas}>
           <Text style={styles.clearText}>Cancella</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.resultBar}>
-        {isAnalyzing ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color="#00e676" size="small" style={{ marginRight: 8 }} />
-            <Text style={styles.statusText}>{statusText}</Text>
-          </View>
-        ) : mathResult ? (
-          <View style={styles.mathContainer}>
-            <Text style={styles.latexText}>Letto: {mathResult.latex}</Text>
-            <Text style={styles.resultText}>Risultato: {mathResult.result}</Text>
-          </View>
-        ) : (
-          <Text style={styles.statusText}>{statusText || 'Scrivi qualcosa...'}</Text>
-        )}
-      </View>
-
       <ViewShot ref={canvasRef} style={styles.canvasContainer} options={{ format: 'png', quality: 0.8 }}>
         <View style={styles.svgContainer} collapsable={false} {...panResponder.panHandlers}>
-          <Svg style={styles.svg}>
-            {completedPaths.map((path, index) => (
-              <Path
-                key={index}
-                d={path}
-                stroke="#ffffff"
-                strokeWidth={4}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ))}
-            {currentSvgPath !== '' && (
-              <Path
-                d={currentSvgPath}
-                stroke="#ffffff"
-                strokeWidth={4}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-          </Svg>
+          
+          {/* Mostriamo i tratti SVG solo se non c'è ancora un risultato */}
+          {!mathResult && (
+            <Svg style={styles.svg}>
+              {completedPaths.map((path, index) => (
+                <Path key={index} d={path} stroke="#ffffff" strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              ))}
+              {currentSvgPath !== '' && (
+                <Path d={currentSvgPath} stroke="#ffffff" strokeWidth={4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              )}
+            </Svg>
+          )}
+
+          {/* Loader posizionato al centro del disegno durante l'attesa */}
+          {isAnalyzing && boundingBox && !mathResult && (
+            <ActivityIndicator 
+              color="#00e676" 
+              size="large" 
+              style={[
+                styles.floatingLoader,
+                { left: boundingBox.centerX - 18, top: boundingBox.centerY - 18 }
+              ]} 
+            />
+          )}
+
+          {/* Il testo magico che sostituisce il disegno */}
+          {mathResult && boundingBox && (
+            <View
+              style={[
+                styles.magicTextContainer,
+                {
+                  left: boundingBox.x,
+                  top: boundingBox.centerY - 25, // Centrato verticalmente rispetto all'altezza originale
+                }
+              ]}
+            >
+              <Text style={styles.magicText}>
+                {mathResult.latex} = <Text style={styles.magicResult}>{mathResult.result}</Text>
+              </Text>
+            </View>
+          )}
+
         </View>
       </ViewShot>
     </View>
@@ -239,12 +280,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
   },
   title: {
     color: '#ffffff',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  statusText: {
+    color: '#aaaaaa',
+    fontSize: 14,
+    fontStyle: 'italic',
+    flex: 1,
+    textAlign: 'center',
   },
   clearButton: {
     backgroundColor: '#ff4444',
@@ -256,38 +306,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: 'bold',
   },
-  resultBar: {
-    minHeight: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333333',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusText: {
-    color: '#aaaaaa',
-    fontSize: 16,
-    fontStyle: 'italic',
-  },
-  mathContainer: {
-    alignItems: 'center',
-  },
-  latexText: {
-    color: '#888888',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  resultText: {
-    color: '#00e676',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
   canvasContainer: {
     flex: 1,
     backgroundColor: '#1e1e1e',
@@ -297,5 +315,23 @@ const styles = StyleSheet.create({
   },
   svg: {
     flex: 1,
+  },
+  floatingLoader: {
+    position: 'absolute',
+  },
+  magicTextContainer: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  magicText: {
+    color: '#ffffff',
+    fontSize: 32,
+    fontWeight: '500',
+  },
+  magicResult: {
+    color: '#00e676',
+    fontWeight: 'bold',
   },
 });

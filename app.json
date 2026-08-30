@@ -15,10 +15,17 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.carpatrice.calc"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "06c460eb-1b1e-4855-8b02-f15fe309dff6"
+      }
+    },
+    "owner": "pineapple-interactive"
   }
 }
